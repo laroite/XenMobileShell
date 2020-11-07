@@ -4,6 +4,7 @@
 # Revision 2016.10.21: adjusted the confirmation on new-xmenrollment to ensure "YesToAll" actually works when pipelining. Corrected typo in notifyNow parameter name.
 # Revision 1.1.4 2016.11.24: corrected example in new-xmenrollment
 # Revision 1.2.0 2016.11.25: added the use of a PScredential object with the new-xmsession command.   
+# Revision 2020.11.07: added get-XMUser and Remove-XMUser functions. Added support for connecting to cloud environments.
 
 
 
@@ -340,15 +341,23 @@ Process {
 
         Set-Variable -name "XMSessionUseInactivity" -value $false -scope global
 
-        #get the static timeout and deduct 30 seconds. 
+        #get the static timeout and deduct 30 seconds.
 
-        $timeToExpiry = ([convert]::ToInt32((get-XMServerProperty -name "xms.publicapi.static.timeout" -skipCheck $true).value))* 60 - 30
-        Write-Verbose ("expiry in seconds: " + $timeToExpiry)
+        # Note that for cloud-hosted sites this setting is not visible to the customer, and will evaluate to 0.
+        
+        $staticTimeout = [convert]::ToInt32((get-XMServerProperty -name "xms.publicapi.static.timeout" -skipCheck $true).value)
+        if ($staticTimeout -eq 0) {
+            $staticTimeout = 60
+        }
+        $timeToExpiry = ($staticTimeout)* 60 - 30
+
+        <#$timeToExpiry = ([convert]::ToInt32((get-XMServerProperty -name "xms.publicapi.static.timeout" -skipCheck $true).value))* 60 - 30
+        Write-Verbose ("expiry in seconds: " + $timeToExpiry)#>
 
         Set-Variable -name "XMSessionExpiry" -Value (get-Date).AddSeconds($timeToExpiry) -scope global
 
         Write-verbose ("The session expiry time is set to: " + $XMSessionExpiry)
-
+        
         }
 
 
@@ -1805,6 +1814,89 @@ remove-xmclientproperty -key "TEST_PROPERTY"
 
 }
 
+#functions to manage users
+
+function get-XMUser {
+<#
+.SYNOPSIS
+Basic search function to find users
+
+.DESCRIPTION
+Search function to find users. The users are returned as an array of objects, each object representing a single user. 
+
+.PARAMETER criteria
+Specify a search criteria. Anything that will work in the 'search' field in the GUI will work here as well.    
+
+.PARAMETER ResultSetSize
+By default only the first 1000 records are returned. Specify the resultsetsize to get more records returned. 
+
+.EXAMPLE
+get.XMUser -criteria "username"
+
+#>
+
+     [CmdletBinding()]
+
+    param(
+        [parameter(ValueFromPipeline)][string]$criteria,
+        [parameter()][string]$filter = "[]",
+        [parameter()][int]$ResultSetSize = 999
+    )
+
+   Begin {
+    #check session state
+    checkSession
+    } 
+
+   Process { 
+    
+      $results = search -url "/localusersgroups/filter" -criteria $criteria -filterIds $filter -ResultSetSize $ResultSetSize
+      return $results.Users
+    }
+
+}
+
+function remove-XMUser {
+<#
+.SYNOPSIS
+Removes a user from the XMS server.
+
+.DESCRIPTION
+Removes a user from the XMS server. Requires the exact username in the ID attribute.
+
+.PARAMETER id
+This parameter specifies the username to target.
+
+.EXAMPLE
+remove-xmdevice -id "username"
+
+#>
+
+     [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="Low")]
+
+    param(
+       
+        [parameter(ValueFromPipeLineByPropertyName,mandatory)][string[]]$id
+      
+    )
+
+    Begin {
+         #check session state
+         checkSession
+    }
+
+    Process {
+
+        if ($PSCmdlet.ShouldProcess($id)) {
+
+            deleteObject -url "/localusersgroups/deletelocalusers" -target $id
+
+        }
+
+        }
+
+}
+
 
 Export-ModuleMember -Function get-XMClientProperty
 Export-ModuleMember -Function get-XMDevice
@@ -1818,6 +1910,7 @@ Export-ModuleMember -Function get-XMDeviceProperty
 Export-ModuleMember -Function get-XMDeviceSoftwareInventory
 Export-ModuleMember -Function get-XMEnrollment
 Export-ModuleMember -Function get-XMServerProperty
+Export-ModuleMember -Function get-XMUser
 Export-ModuleMember -Function Invoke-XMDeviceSelectiveWipe
 Export-ModuleMember -Function Invoke-XMDeviceWipe
 Export-ModuleMember -Function new-XMClientProperty
@@ -1828,11 +1921,9 @@ Export-ModuleMember -Function remove-XMClientProperty
 Export-ModuleMember -Function remove-XMDevice
 Export-ModuleMember -Function remove-XMDeviceProperty
 Export-ModuleMember -Function remove-XMServerProperty
+Export-ModuleMember -Function remove-XMUser
 Export-ModuleMember -Function set-XMClientProperty
 Export-ModuleMember -Function set-XMDeviceProperty
 Export-ModuleMember -Function set-XMServerProperty
 Export-ModuleMember -Function Update-XMDevice
-
-
-
 
